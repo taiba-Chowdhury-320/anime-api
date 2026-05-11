@@ -2,9 +2,7 @@ const axios = require('axios');
 
 async function searchTikTokVideos(keyword) {
   try {
-    const options = {
-      method: 'GET',
-      url: 'https://tiktok-scraper7.p.rapidapi.com/feed/search',
+    const response = await axios.get('https://tiktok-scraper7.p.rapidapi.com/feed/search', {
       params: {
         keywords: keyword,
         region: 'US',
@@ -17,27 +15,40 @@ async function searchTikTokVideos(keyword) {
         'x-rapidapi-key': process.env.RAPIDAPI_KEY,
         'x-rapidapi-host': 'tiktok-scraper7.p.rapidapi.com'
       }
-    };
+    });
 
-    const response = await axios.request(options);
-    const videos = response.data?.data?.videos || [];
+    console.log('API Response:', JSON.stringify(response.data).slice(0, 500));
+
+    // TiKWM different response structure
+    const data = response.data;
+    let videos = [];
+
+    if (data?.data?.videos) {
+      videos = data.data.videos;
+    } else if (data?.videos) {
+      videos = data.videos;
+    } else if (Array.isArray(data?.data)) {
+      videos = data.data;
+    } else if (Array.isArray(data)) {
+      videos = data;
+    }
 
     const formatted = videos
-      .filter(v => v.play)
+      .filter(v => v.play || v.video?.play_addr?.url_list?.[0])
       .map(v => ({
-        videoUrl: v.play,
-        title: v.title || keyword,
-        author: v.author?.nickname || 'Unknown',
-        likes: v.digg_count || 0,
-        views: v.play_count || 0,
-        thumbnail: v.cover || '',
+        videoUrl: v.play || v.video?.play_addr?.url_list?.[0] || '',
+        title: v.desc || v.title || keyword,
+        author: v.author?.nickname || v.nickname || 'Unknown',
+        likes: v.digg_count || v.statistics?.digg_count || 0,
+        views: v.play_count || v.statistics?.play_count || 0,
+        thumbnail: v.cover || v.video?.cover?.url_list?.[0] || '',
         duration: v.duration || 0
       }));
 
     return formatted;
 
   } catch (error) {
-    console.error('Error:', error.message);
+    console.error('Error:', error.response?.data || error.message);
     return [];
   }
 }
@@ -63,7 +74,8 @@ module.exports = async (req, res) => {
       return res.status(404).json({
         success: false,
         error: 'No videos found',
-        keyword
+        keyword,
+        tip: 'Check Vercel logs for API response details'
       });
     }
 
@@ -77,7 +89,8 @@ module.exports = async (req, res) => {
   } catch (error) {
     return res.status(500).json({
       success: false,
-      error: 'Internal server error'
+      error: 'Internal server error',
+      message: error.message
     });
   }
 };
